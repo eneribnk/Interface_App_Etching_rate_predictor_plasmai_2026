@@ -1,0 +1,1376 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Etch Rate Predictor — v3.3</title>
+
+  <!-- Google Font -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+
+  <!-- ONNX Runtime Web -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/ort.min.js"></script>
+
+  <style>
+    /* ============================================================
+       EASY CUSTOMIZATION — Edit values below to restyle the app
+       ============================================================ */
+    :root {
+      /* Colors */
+      --color-bg: #0f172a;
+      /* main background */
+      --color-panel: #1e293b;
+      /* card/panel background */
+      --color-border: #334155;
+      /* border lines */
+      --color-accent: #3b82f6;
+      /* primary blue accent */
+      --color-accent-hover: #60a5fa;
+      /* accent on hover */
+      --color-success: #22c55e;
+      /* green for predict button */
+      --color-success-hover: #16a34a;
+      --color-text: #f1f5f9;
+      /* primary text */
+      --color-muted: #94a3b8;
+      /* secondary/muted text */
+      --color-input-bg: #0f172a;
+      /* input field background */
+
+      /* Plot line color */
+      --plot-line: #3b82f6;
+      /* blue line */
+      --plot-fill: rgba(59, 130, 246, 0.15);
+      --plot-point: #60a5fa;
+
+      /* Fonts */
+      --font-family: 'Inter', sans-serif;
+      --font-size-base: 14px;
+      --font-size-label: 13px;
+      --font-size-title: 24px;
+    }
+
+    /* ============================================================ */
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-family);
+      font-size: var(--font-size-base);
+      background: var(--color-bg);
+      color: var(--color-text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ── */
+    header {
+      background: var(--color-panel);
+      border-bottom: 1px solid var(--color-border);
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    header .logo {
+      width: 36px;
+      height: 36px;
+      background: var(--color-accent);
+      border-radius: 8px;
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+      font-weight: 700;
+      color: #fff;
+      flex-shrink: 0;
+    }
+
+    header h1 {
+      font-size: var(--font-size-title);
+      font-weight: 700;
+      letter-spacing: -0.5px;
+    }
+
+    header .badge {
+      margin-left: auto;
+      background: rgba(59, 130, 246, 0.18);
+      color: var(--color-accent);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      border-radius: 20px;
+      padding: 4px 14px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    /* ── Main Layout ── */
+    main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 380px 1fr 320px;
+      gap: 0;
+      max-height: calc(100vh - 73px);
+      overflow: hidden;
+    }
+
+    /* ── Reactor Panel (Right) ── */
+    .reactor-panel {
+      background: var(--color-panel);
+      border-left: 1px solid var(--color-border);
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      overflow-y: auto;
+    }
+
+    .reactor-svg-container {
+      background: var(--color-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      position: relative;
+    }
+
+    .reactor-label-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 4px;
+    }
+
+    .reactor-desc {
+      font-size: 12px;
+      color: var(--color-muted);
+      line-height: 1.5;
+    }
+
+    .param-indicator {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 12px;
+      background: rgba(15, 23, 42, 0.4);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      font-size: 12px;
+    }
+
+    .param-indicator span:first-child {
+      color: var(--color-muted);
+      font-weight: 500;
+    }
+
+    .param-indicator span:last-child {
+      color: var(--color-accent);
+      font-weight: 600;
+      font-family: monospace;
+    }
+
+    /* ── Left Panel ── */
+    .left-panel {
+      background: var(--color-panel);
+      border-right: 1px solid var(--color-border);
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .section {
+      padding: 22px 24px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    .section-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 18px;
+    }
+
+    /* Input rows */
+    .input-group {
+      margin-bottom: 18px;
+    }
+
+    .input-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .input-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 8px;
+    }
+
+    .input-label span:first-child {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--color-text);
+    }
+
+    .input-label .unit {
+      font-size: 11px;
+      color: var(--color-muted);
+      background: rgba(148, 163, 184, 0.1);
+      border-radius: 4px;
+      padding: 2px 6px;
+    }
+
+    .range-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .range-row input[type=range] {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--color-border);
+      outline: none;
+      cursor: pointer;
+    }
+
+    .range-row input[type=range]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px;
+      height: 16px;
+      background: var(--color-accent);
+      border-radius: 50%;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .range-row input[type=range]::-webkit-slider-thumb:hover {
+      background: var(--color-accent-hover);
+      transform: scale(1.2);
+    }
+
+    .range-row input[type=number] {
+      width: 90px;
+      background: var(--color-input-bg);
+      border: 1px solid var(--color-border);
+      border-radius: 6px;
+      color: var(--color-text);
+      padding: 6px 10px;
+      font-family: var(--font-family);
+      font-size: 13px;
+      text-align: right;
+      transition: border-color 0.2s;
+    }
+
+    .range-row input[type=number]:focus {
+      outline: none;
+      border-color: var(--color-accent);
+    }
+
+    .range-limits {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 4px;
+      font-size: 10px;
+      color: var(--color-muted);
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 12px;
+      border: none;
+      border-radius: 8px;
+      font-family: var(--font-family);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s, opacity 0.2s;
+    }
+
+    .btn:active {
+      transform: scale(0.98);
+    }
+
+    .btn-predict {
+      background: var(--color-success);
+      color: #fff;
+    }
+
+    .btn-predict:hover {
+      background: var(--color-success-hover);
+    }
+
+    .btn-predict:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-add {
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--color-accent);
+      border: 1px solid rgba(59, 130, 246, 0.35);
+      margin-bottom: 8px;
+    }
+
+    .btn-add:hover {
+      background: rgba(59, 130, 246, 0.22);
+    }
+
+    .btn-clear {
+      background: rgba(148, 163, 184, 0.08);
+      color: var(--color-muted);
+      border: 1px solid var(--color-border);
+    }
+
+    .btn-clear:hover {
+      color: var(--color-text);
+      background: rgba(148, 163, 184, 0.15);
+    }
+
+    /* Batch file loader */
+    .file-drop {
+      border: 2px dashed var(--color-border);
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--color-muted);
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .file-drop:hover {
+      border-color: var(--color-accent);
+      background: rgba(59, 130, 246, 0.05);
+    }
+
+    .file-drop input {
+      display: none;
+    }
+
+    /* Status line */
+    #statusBar {
+      padding: 10px 24px;
+      font-size: 12px;
+      color: var(--color-muted);
+      background: rgba(15, 23, 42, 0.5);
+      border-top: 1px solid var(--color-border);
+    }
+
+    /* ── Right Panel ── */
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .chart-area {
+      flex: 1;
+      padding: 28px 32px 16px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .chart-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .chart-header .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--plot-line);
+      display: inline-block;
+      margin-right: 6px;
+    }
+
+    .chart-wrapper {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    /* Results table */
+    .results-area {
+      border-top: 1px solid var(--color-border);
+      padding: 0 32px 20px;
+      max-height: 240px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .results-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 0 10px;
+    }
+
+    .results-header h3 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--color-muted);
+    }
+
+    .btn-download {
+      background: rgba(59, 130, 246, 0.12);
+      color: var(--color-accent);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      border-radius: 6px;
+      padding: 5px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-family);
+      transition: background 0.2s;
+    }
+
+    .btn-download:hover {
+      background: rgba(59, 130, 246, 0.25);
+    }
+
+    .btn-download:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    thead th {
+      position: sticky;
+      top: 0;
+      background: var(--color-panel);
+      color: var(--color-muted);
+      font-weight: 600;
+      font-size: 11px;
+      text-align: right;
+      padding: 6px 10px;
+      border-bottom: 1px solid var(--color-border);
+    }
+
+    thead th:first-child {
+      text-align: left;
+    }
+
+    tbody tr {
+      transition: background 0.1s;
+    }
+
+    tbody tr:hover {
+      background: rgba(59, 130, 246, 0.06);
+    }
+
+    tbody tr.active-row {
+      background: rgba(59, 130, 246, 0.12);
+    }
+
+    tbody td {
+      padding: 6px 10px;
+      text-align: right;
+      border-bottom: 1px solid rgba(51, 65, 85, 0.5);
+      color: var(--color-text);
+    }
+
+    tbody td:first-child {
+      text-align: left;
+      color: var(--color-muted);
+    }
+
+    /* Empty state */
+    .empty-state {
+      flex: 1;
+      display: grid;
+      place-items: center;
+      color: var(--color-muted);
+      font-size: 13px;
+      text-align: center;
+      gap: 8px;
+    }
+
+    .empty-state svg {
+      opacity: 0.3;
+      margin-bottom: 8px;
+    }
+
+    /* Loading spinner */
+    .spinner {
+      width: 18px;
+      height: 18px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: inline-block;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ── HEADER ── -->
+  <header>
+    <div class="logo">ER</div>
+    <h1>Etching rate Prediction</h1>
+    <span class="badge">v3.3 · O₂ Plasma</span>
+  </header>
+
+  <!-- ── MAIN LAYOUT ── -->
+  <main>
+
+    <!-- ── LEFT PANEL ── -->
+    <div class="left-panel">
+
+      <!-- Single-point inputs -->
+      <div class="section">
+        <div class="section-title">Operating Conditions</div>
+
+        <!-- Power -->
+        <div class="input-group">
+          <div class="input-label">
+            <span>Power</span>
+            <span class="unit">W</span>
+          </div>
+          <div class="range-row">
+            <input type="range" id="sliderPower" min="500" max="2500" step="1" value="1500" oninput="syncNum('Power')">
+            <input type="number" id="numPower" min="500" max="2500" step="1" value="1500" oninput="syncSlider('Power')">
+          </div>
+          <div class="range-limits"><span>500 W</span><span>2500 W</span></div>
+        </div>
+
+        <!-- Pressure -->
+        <div class="input-group">
+          <div class="input-label">
+            <span>Pressure</span>
+            <span class="unit">Torr</span>
+          </div>
+          <div class="range-row">
+            <input type="range" id="sliderPressure" min="0.008" max="0.06" step="0.0001" value="0.03"
+              oninput="syncNum('Pressure')">
+            <input type="number" id="numPressure" min="0.008" max="0.06" step="0.0001" value="0.03"
+              oninput="syncSlider('Pressure')">
+          </div>
+          <div class="range-limits"><span>0.008 Torr</span><span>0.06 Torr</span></div>
+        </div>
+
+        <!-- Feed -->
+        <div class="input-group">
+          <div class="input-label">
+            <span>Feed</span>
+            <span class="unit">sccm</span>
+          </div>
+          <div class="range-row">
+            <input type="range" id="sliderFeed" min="20" max="120" step="0.1" value="60" oninput="syncNum('Feed')">
+            <input type="number" id="numFeed" min="20" max="120" step="0.1" value="60" oninput="syncSlider('Feed')">
+          </div>
+          <div class="range-limits"><span>20 sccm</span><span>120 sccm</span></div>
+        </div>
+
+        <!-- Vbias -->
+        <div class="input-group">
+          <div class="input-label">
+            <span>Vbias</span>
+            <span class="unit">V</span>
+          </div>
+          <div class="range-row">
+            <input type="range" id="sliderVbias" min="30" max="630" step="1" value="350" oninput="syncNum('Vbias')">
+            <input type="number" id="numVbias" min="30" max="630" step="1" value="350" oninput="syncSlider('Vbias')">
+          </div>
+          <div class="range-limits"><span>30 V</span><span>630 V</span></div>
+        </div>
+
+        <button class="btn btn-predict" id="btnPredict" onclick="runSinglePrediction()">
+          Predict Etch Rate
+        </button>
+      </div>
+
+      <!-- Batch section -->
+      <div class="section">
+        <div class="section-title">Batch Prediction</div>
+        <label class="file-drop" for="batchFile">
+          <input type="file" id="batchFile" accept=".txt,.csv" onchange="loadBatchFile(event)">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"
+            style="margin-bottom:6px">
+            <path d="M12 16v-8m0 0L8 12m4-4 4 4" />
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+          </svg><br>
+          Drop or click to load <code>input_parameters.txt</code><br>
+          <span style="font-size:10px;margin-top:4px;display:block;">Tab or space separated · # lines ignored</span>
+        </label>
+        <div style="margin-top:8px;display:flex;gap:8px;">
+          <button class="btn btn-add" style="flex:1" onclick="addCurrentToTable()">+ Add Current</button>
+          <button class="btn btn-clear" style="flex:0 0 auto;width:80px" onclick="clearTable()">Clear</button>
+        </div>
+      </div>
+
+      <!-- Status bar -->
+      <div style="flex:1"></div>
+      <div id="statusBar">Model loading…</div>
+    </div>
+
+    <!-- ── RIGHT PANEL ── -->
+    <div class="right-panel">
+      <div class="chart-area">
+        <div class="chart-header">
+          <h2>
+            <span class="legend-dot"></span>
+            Spatial Etch Rate Profile
+          </h2>
+          <span id="chartLabel" style="font-size:12px;color:var(--color-muted);">—</span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="etchChart"></canvas>
+        </div>
+      </div>
+
+      <!-- Results table -->
+      <div class="results-area">
+        <div class="results-header">
+          <h3>Prediction History</h3>
+
+          <!-- Interactive View Mode Toggle -->
+          <div style="display: flex; align-items: center; gap: 10px; margin-left: auto; margin-right: 12px;">
+            <span
+              style="font-size: 11px; color: var(--color-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">View
+              Mode:</span>
+            <div
+              style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 6px; padding: 2px; display: flex; gap: 2px;">
+              <button id="toggleDetailed"
+                style="background: var(--color-accent); border: none; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; color: #fff; cursor: pointer; transition: all 0.2s;"
+                onclick="setViewMode('detailed')">Detailed</button>
+              <button id="toggleSummary"
+                style="background: transparent; border: none; border-radius: 4px; padding: 4px 10px; font-size: 11px; font-weight: 600; color: var(--color-muted); cursor: pointer; transition: all 0.2s;"
+                onclick="setViewMode('summary')">Summary</button>
+            </div>
+          </div>
+
+          <button class="btn-download" id="btnDownload" onclick="downloadCSV()" disabled>↓ Download TSV</button>
+        </div>
+        <div class="table-scroll">
+          <table id="resultsTable">
+            <thead id="resultsHeader">
+              <!-- Headers are set dynamically by setViewMode() -->
+            </thead>
+            <tbody id="resultsBody">
+              <tr>
+                <td colspan="15">
+                  <div class="empty-state" style="padding:20px 0;">No predictions yet. Enter conditions and click
+                    Predict.</div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── REACTOR PANEL ── -->
+    <div class="reactor-panel">
+      <div class="section-title" style="margin-bottom: 8px;">Reactor Schematic</div>
+
+      <div class="reactor-svg-container"
+        style="background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 12px; padding: 12px; display: flex; justify-content: center; align-items: center; min-height: 280px; box-shadow: inset 0 0 10px rgba(0,0,0,0.4);">
+        <img src="reactor.png" alt="Cobra Reactor Schematic"
+          style="max-width: 100%; max-height: 260px; border-radius: 8px; object-fit: contain;" />
+      </div>
+
+      <!-- Integral Uniformity Card -->
+      <div class="reactor-label-title" style="margin-top: 10px;">Integral Uniformity</div>
+      <div class="param-indicator" style="background: rgba(59, 130, 246, 0.05); border: 1px solid var(--color-border); border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 10px; align-items: stretch; height: auto;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-weight: 600; font-size: 13.5px; color: var(--color-text);">Flat Uniformity Score</span>
+          <span id="scoreFlat" style="font-family: monospace; font-size: 16px; font-weight: 700; color: var(--color-success);">—</span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px dashed var(--color-border); padding-top: 8px;">
+          <span style="font-weight: 600; font-size: 13.5px; color: var(--color-text);">Polar Uniformity Score</span>
+          <span id="scoreWeighted" style="font-family: monospace; font-size: 16px; font-weight: 700; color: #38bdf8;">—</span>
+        </div>
+        
+        <!-- Collapsible Equations Button -->
+        <div style="border-top: 1px solid var(--color-border); padding-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 10px; color: var(--color-muted);">Equations & Explanation</span>
+          <button id="btnToggleEq" style="background: none; border: none; color: var(--color-accent); font-size: 10px; font-weight: 600; cursor: pointer; padding: 2px 6px; border-radius: 4px; transition: background 0.2s;" onclick="toggleEquations()">Show Info</button>
+        </div>
+
+        <!-- Collapsible Equations Panel -->
+        <div id="equationsPanel" style="display: none; font-size: 11px; color: var(--color-muted); line-height: 1.4; background: rgba(15, 23, 42, 0.6); padding: 8px; border-radius: 6px; border: 1px solid var(--color-border); margin-top: 4px;">
+          <div style="margin-bottom: 8px;">
+            <strong>Relative Deviation:</strong><br>
+            <span style="font-family: monospace; font-size: 10px; color: var(--color-text);">f(r) = |(ER(r) - ER(0)) / ER(0)|</span>
+          </div>
+          <div style="margin-bottom: 8px;">
+            <strong>Flat Uniformity:</strong><br>
+            <span style="font-family: monospace; font-size: 10px; color: var(--color-text);">U<sub>flat</sub> = 1/R &int;<sub>0</sub><sup>R</sup> f(r) dr</span><br>
+            <span style="font-size: 10px; color: var(--color-muted);">Score = (1 - U<sub>flat</sub>) &times; 100%</span>
+          </div>
+          <div style="margin-bottom: 8px;">
+            <strong>Polar Uniformity (Weighted):</strong><br>
+            <span style="font-family: monospace; font-size: 10px; color: var(--color-text);">U<sub>polar</sub> = 2/R<sup>2</sup> &int;<sub>0</sub><sup>R</sup> f(r) r dr</span><br>
+            <span style="font-size: 10px; color: var(--color-muted);">Score = (1 - U<sub>polar</sub>) &times; 100%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="reactor-label-title">Reactor Info</div>
+      <p class="reactor-desc">
+        Inductively Coupled Plasma (ICP) Chamber model with a stepped-cylinder wall profile, calibrated for O₂ gas
+        discharge.
+        The silicon wafer is situated on the lower RF-biased chuck.
+      </p>
+
+      <div class="reactor-label-title">Realtime Indicators</div>
+
+      <div class="param-indicator">
+        <span>Power Source</span>
+        <span id="indPower">1500 W</span>
+      </div>
+      <div class="param-indicator">
+        <span>Chamber Pressure</span>
+        <span id="indPressure">0.0300 Torr</span>
+      </div>
+      <div class="param-indicator">
+        <span>Gas Flow Rate</span>
+        <span id="indFeed">60.0 sccm</span>
+      </div>
+      <div class="param-indicator">
+        <span>RF Chuck Vbias</span>
+        <span id="indVbias">350 V</span>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // ============================================================
+    // SCALING STATS (from stats_random_split.json)
+    // ============================================================
+    const STATS = {
+      Power: { mean: 1351.2954222057795, std: 410.4353952887882 },
+      Pressure: { mean: 0.03231363485113835, std: 0.007852680107792097 },
+      Feed: { mean: 54.786518293345004, std: 11.615621111596969 },
+      Vbias: { mean: 346.0893383984238, std: 106.86834966402365 },
+      Point1_EtchRate: { mean: 1623.6930303777838, std: 1143.0279595536267 },
+      Point2_EtchRate: { mean: 1619.9326960370283, std: 1140.304930223995 },
+      Point3_EtchRate: { mean: 1614.4068049286957, std: 1136.896803356904 },
+      Point4_EtchRate: { mean: 1607.439057918438, std: 1132.997592691506 },
+      Point5_EtchRate: { mean: 1597.9145530147605, std: 1127.968732653461 },
+      Point6_EtchRate: { mean: 1585.9259176182127, std: 1121.5098456338742 },
+      Point7_EtchRate: { mean: 1571.1714739814852, std: 1113.4694329537758 },
+      Point8_EtchRate: { mean: 1553.7030975509124, std: 1104.0221472430835 },
+      Point9_EtchRate: { mean: 1534.1956957255445, std: 1093.6448955555013 },
+      Point10_EtchRate: { mean: 1512.4786909604704, std: 1082.2282573819462 },
+    };
+
+    // ============================================================
+    // ONNX SESSION
+    // ============================================================
+    let session = null;
+    let rowCount = 0;
+    let allRows = [];
+    let activeRowIdx = null;
+
+    async function initModel() {
+      try {
+        ort.env.wasm.wasmPaths = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.18.0/dist/';
+        session = await ort.InferenceSession.create('model.onnx');
+        setStatus('✓ Model loaded. Ready to predict.', '#22c55e');
+        document.getElementById('btnPredict').disabled = false;
+      } catch (e) {
+        setStatus('✗ Could not load model.onnx — make sure the file is in the same folder.', '#ef4444');
+        console.error(e);
+      }
+    }
+
+    function setStatus(msg, color) {
+      const el = document.getElementById('statusBar');
+      el.textContent = msg;
+      el.style.color = color || 'var(--color-muted)';
+    }
+
+    // ============================================================
+    // SLIDER ↔ NUMBER SYNC
+    // ============================================================
+    function syncNum(param) {
+      const val = document.getElementById('slider' + param).value;
+      document.getElementById('num' + param).value = val;
+      updateIndicator(param, val);
+    }
+    function syncSlider(param) {
+      const val = document.getElementById('num' + param).value;
+      document.getElementById('slider' + param).value = val;
+      updateIndicator(param, val);
+    }
+
+    function updateIndicator(param, val) {
+      const num = parseFloat(val);
+      const el = document.getElementById('ind' + param);
+      if (!el) return;
+      if (param === 'Power') el.innerText = `${num.toFixed(0)} W`;
+      else if (param === 'Pressure') el.innerText = `${num.toFixed(4)} Torr`;
+      else if (param === 'Feed') el.innerText = `${num.toFixed(1)} sccm`;
+      else if (param === 'Vbias') el.innerText = `${num.toFixed(0)} V`;
+    }
+
+    // ============================================================
+    // INFERENCE
+    // ============================================================
+    function scaleInput(power, pressure, feed, vbias) {
+      return [
+        (power - STATS.Power.mean) / (STATS.Power.std + 1e-12),
+        (pressure - STATS.Pressure.mean) / (STATS.Pressure.std + 1e-12),
+        (feed - STATS.Feed.mean) / (STATS.Feed.std + 1e-12),
+        (vbias - STATS.Vbias.mean) / (STATS.Vbias.std + 1e-12),
+      ];
+    }
+
+    function unscaleOutput(scaledArr) {
+      return scaledArr.map((v, i) => {
+        const key = `Point${i + 1}_EtchRate`;
+        return v * STATS[key].std + STATS[key].mean;
+      });
+    }
+
+    async function runInference(power, pressure, feed, vbias) {
+      const scaled = scaleInput(power, pressure, feed, vbias);
+      const tensor = new ort.Tensor('float32', new Float32Array(scaled), [1, 4]);
+      const results = await session.run({ input: tensor });
+      const rawOutput = Array.from(results.output.data);
+      return unscaleOutput(rawOutput);
+    }
+
+    // ============================================================
+    // DYNAMIC FRONTEND SMOOTHING FILTER
+    // ============================================================
+    function smoothProfile(arr) {
+      const n = arr.length;
+      if (n < 3) return arr;
+      const smoothed = new Array(n);
+      
+      // 3-point weighted binomial smoothing: [0.22, 0.56, 0.22]
+      // Confines the output to a beautiful, physically realistic smooth trend line
+      for (let i = 0; i < n; i++) {
+        const left = i > 0 ? arr[i-1] : arr[i];
+        const right = i < n - 1 ? arr[i+1] : arr[i];
+        smoothed[i] = 0.22 * left + 0.56 * arr[i] + 0.22 * right;
+      }
+      return smoothed;
+    }
+
+    // ============================================================
+    // SINGLE PREDICTION
+    // ============================================================
+    async function runSinglePrediction() {
+      if (!session) { setStatus('Model not yet loaded…'); return; }
+
+      const power = parseFloat(document.getElementById('numPower').value);
+      const pressure = parseFloat(document.getElementById('numPressure').value);
+      const feed = parseFloat(document.getElementById('numFeed').value);
+      const vbias = parseFloat(document.getElementById('numVbias').value);
+
+      const btn = document.getElementById('btnPredict');
+      btn.innerHTML = '<span class="spinner"></span>Predicting…';
+      btn.disabled = true;
+
+      try {
+        const rawRates = await runInference(power, pressure, feed, vbias);
+        const etchRates = smoothProfile(rawRates);
+        addRowToTable({ power, pressure, feed, vbias }, etchRates);
+        updateChart(etchRates, `P=${power}W, p=${pressure}Torr, F=${feed}sccm, Vb=${vbias}V`);
+        setStatus(`✓ Predicted ${rowCount} condition(s).`, '#22c55e');
+      } catch (e) {
+        setStatus('✗ Inference error: ' + e.message, '#ef4444');
+        console.error(e);
+      }
+
+      btn.innerHTML = 'Predict Etch Rate';
+      btn.disabled = false;
+    }
+
+    // ============================================================
+    // BATCH FILE LOADING
+    // ============================================================
+    async function loadBatchFile(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const text = await file.text();
+      const lines = text.split('\n')
+        .map(l => l.trim())
+        .filter(l => l && !l.startsWith('#'));
+
+      setStatus(`Loading ${lines.length} conditions…`);
+
+      let count = 0;
+      for (const line of lines) {
+        const parts = line.split(/[\t ]+/).map(Number);
+        if (parts.length < 4 || parts.some(isNaN)) continue;
+        const [power, pressure, feed, vbias] = parts;
+        const rawRates = await runInference(power, pressure, feed, vbias);
+        const etchRates = smoothProfile(rawRates);
+        addRowToTable({ power, pressure, feed, vbias }, etchRates);
+        count++;
+      }
+
+      if (count > 0) {
+        // Display last row on chart
+        const last = allRows[allRows.length - 1];
+        updateChart(last.etchRates, `Batch · last condition`);
+      }
+      setStatus(`✓ Batch complete — ${count} conditions predicted.`, '#22c55e');
+
+      // Reset file input so same file can be reloaded
+      event.target.value = '';
+    }
+
+    // ============================================================
+    // ADD CURRENT SLIDER VALUES
+    // ============================================================
+    function addCurrentToTable() {
+      if (!session) { setStatus('Model not yet loaded…'); return; }
+      runSinglePrediction();
+    }
+
+    // ============================================================
+    // TABLE
+    // ============================================================
+    // ============================================================
+    // DYNAMIC TABLE RENDERING (Detailed vs Summary)
+    // ============================================================
+    let currentViewMode = 'detailed';
+
+    function setViewMode(mode) {
+      currentViewMode = mode;
+
+      // Update button visual states
+      const btnDetailed = document.getElementById('toggleDetailed');
+      const btnSummary = document.getElementById('toggleSummary');
+
+      if (mode === 'detailed') {
+        btnDetailed.style.background = 'var(--color-accent)';
+        btnDetailed.style.color = '#fff';
+        btnSummary.style.background = 'transparent';
+        btnSummary.style.color = 'var(--color-muted)';
+      } else {
+        btnDetailed.style.background = 'transparent';
+        btnDetailed.style.color = 'var(--color-muted)';
+        btnSummary.style.background = 'var(--color-accent)';
+        btnSummary.style.color = '#fff';
+      }
+
+      renderTable();
+    }
+
+    function renderTable() {
+      const header = document.getElementById('resultsHeader');
+      const tbody = document.getElementById('resultsBody');
+
+      // Set headers dynamically
+      if (currentViewMode === 'detailed') {
+        header.innerHTML = `
+      <tr>
+        <th>#</th>
+        <th>Power (W)</th>
+        <th>Pressure (Torr)</th>
+        <th>Feed (sccm)</th>
+        <th>Vbias (V)</th>
+        <th>Pt1 (nm/min)</th>
+        <th>Pt2</th><th>Pt3</th><th>Pt4</th><th>Pt5</th>
+        <th>Pt6</th><th>Pt7</th><th>Pt8</th><th>Pt9</th>
+        <th>Pt10</th>
+      </tr>
+    `;
+      } else {
+        header.innerHTML = `
+      <tr>
+        <th>#</th>
+        <th>Power (W)</th>
+        <th>Pressure (Torr)</th>
+        <th>Feed (sccm)</th>
+        <th>Vbias (V)</th>
+        <th>Mean ER (nm/min)</th>
+        <th>Max ER</th>
+        <th>Min ER</th>
+        <th>WIW Uniformity</th>
+        <th>Flat U. Score</th>
+        <th>Polar U. Score</th>
+      </tr>
+    `;
+      }
+
+      // Populate body
+      if (allRows.length === 0) {
+        const colCount = currentViewMode === 'detailed' ? 15 : 11;
+        tbody.innerHTML = `
+      <tr><td colspan="${colCount}">
+        <div class="empty-state" style="padding:20px 0;">No predictions yet. Enter conditions and click Predict.</div>
+      </td></tr>
+    `;
+        return;
+      }
+
+      tbody.innerHTML = '';
+      allRows.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.dataset.rowId = row.id;
+        tr.onclick = () => selectRow(row.id);
+        if (activeRowIdx === row.id) {
+          tr.classList.add('active-row');
+        }
+
+        const inputs = row.inputs;
+        let rateCells = '';
+
+        if (currentViewMode === 'detailed') {
+          rateCells = row.etchRates.map(v => `<td>${v.toFixed(1)}</td>`).join('');
+        } else {
+          const sum = row.etchRates.reduce((a, b) => a + b, 0);
+          const mean = sum / row.etchRates.length;
+          const max = Math.max(...row.etchRates);
+          const min = Math.min(...row.etchRates);
+          // Uniformity: Standard min-max profile metric: ±(Max - Min)/(2 * Mean)
+          const uniformity = mean > 0 ? ((max - min) / (2 * mean)) * 100 : 0;
+
+          // Compute Flat and Polar Uniformity Scores
+          const er0 = row.etchRates[0];
+          let flatScore = 0;
+          let polarScore = 0;
+          if (er0 > 0) {
+            const dr = 5;
+            const n = row.etchRates.length;
+            const R = (n - 1) * dr;
+            const f = row.etchRates.map(er => Math.abs((er - er0) / er0));
+            
+            // Flat
+            let sumFlat = 0;
+            for (let i = 1; i < n - 1; i++) sumFlat += f[i];
+            sumFlat += f[n - 1] / 2;
+            const flatUniformityRatio = (sumFlat * dr) / R;
+            flatScore = (1 - flatUniformityRatio) * 100;
+
+            // Polar
+            let sumWeighted = 0;
+            for (let i = 1; i < n - 1; i++) {
+              const r = i * dr;
+              sumWeighted += f[i] * r;
+            }
+            sumWeighted += (f[n - 1] * R) / 2;
+            const weightedUniformityRatio = (2 / (R * R)) * (sumWeighted * dr);
+            polarScore = (1 - weightedUniformityRatio) * 100;
+          }
+
+          rateCells = `
+        <td style="font-weight: 600; color: #38bdf8;">${mean.toFixed(1)}</td>
+        <td>${max.toFixed(1)}</td>
+        <td>${min.toFixed(1)}</td>
+        <td style="font-weight: 600; color: #fb7185;">±${uniformity.toFixed(2)}%</td>
+        <td style="font-weight: 600; color: #22c55e;">${flatScore.toFixed(3)}%</td>
+        <td style="font-weight: 600; color: #38bdf8;">${polarScore.toFixed(3)}%</td>
+      `;
+        }
+
+        tr.innerHTML = `
+      <td>${row.id}</td>
+      <td>${inputs.power.toFixed(1)}</td>
+      <td>${inputs.pressure.toFixed(5)}</td>
+      <td>${inputs.feed.toFixed(2)}</td>
+      <td>${inputs.vbias.toFixed(1)}</td>
+      ${rateCells}
+    `;
+        tbody.appendChild(tr);
+      });
+
+      // Auto-scroll to latest
+      tbody.parentElement.scrollTop = tbody.scrollHeight;
+    }
+
+    function addRowToTable(inputs, etchRates) {
+      rowCount++;
+      const row = { id: rowCount, inputs, etchRates };
+      allRows.push(row);
+
+      renderTable();
+
+      // Enable download
+      document.getElementById('btnDownload').disabled = false;
+
+      selectRow(row.id);
+    }
+
+    function selectRow(id) {
+      activeRowIdx = id;
+      document.querySelectorAll('#resultsBody tr').forEach(tr => {
+        tr.classList.toggle('active-row', parseInt(tr.dataset.rowId) === id);
+      });
+      const row = allRows.find(r => r.id === id);
+      if (row) {
+        updateChart(row.etchRates, `P=${row.inputs.power.toFixed(0)}W, p=${row.inputs.pressure.toFixed(4)}Torr, F=${row.inputs.feed.toFixed(1)}sccm, Vb=${row.inputs.vbias.toFixed(0)}V`);
+      }
+    }
+
+    function clearTable() {
+      allRows = [];
+      rowCount = 0;
+      activeRowIdx = null;
+      renderTable();
+      document.getElementById('btnDownload').disabled = true;
+      clearChart();
+      setStatus('Table cleared.', 'var(--color-muted)');
+    }
+
+    // ============================================================
+    // CHART
+    // ============================================================
+    const ctx = document.getElementById('etchChart').getContext('2d');
+    const etchlabels = ['0 mm', '5 mm', '10 mm', '15 mm', '20 mm', '25 mm', '30 mm', '35 mm', '40 mm', '45 mm'];
+
+    Chart.defaults.color = '#94a3b8';
+    Chart.defaults.font.family = "'Inter', sans-serif";
+
+    const etcChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: etchlabels,
+        datasets: [{
+          label: 'Etch Rate (nm/min)',
+          data: [],
+          borderColor: '#3b82f6',
+          backgroundColor: 'rgba(59, 130, 246, 0.12)',
+          pointBackgroundColor: '#60a5fa',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 1.5,
+          pointRadius: 6,
+          pointHoverRadius: 8,
+          borderWidth: 2.5,
+          fill: true,
+          tension: 0.35,
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: { duration: 500, easing: 'easeOutCubic' },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#1e293b',
+            borderColor: '#334155',
+            borderWidth: 1,
+            titleColor: '#f1f5f9',
+            bodyColor: '#94a3b8',
+            padding: 12,
+            displayColors: false,
+            callbacks: {
+              label: ctx => `${ctx.parsed.y.toFixed(2)} nm/min`,
+            },
+          },
+        },
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: 'Wafer Radial Coordinate (mm)',
+              color: '#f1f5f9',
+              font: { size: 16, weight: '600', family: "'Inter', sans-serif" },
+              padding: { top: 12 },
+            },
+            grid: { color: 'rgba(255, 255, 255, 0.15)' },
+            ticks: { color: '#cbd5e1', font: { size: 13, weight: '500' } },
+          },
+          y: {
+            title: {
+              display: true,
+              text: 'Etch Rate (nm/min)',
+              color: '#f1f5f9',
+              font: { size: 16, weight: '600', family: "'Inter', sans-serif" },
+              padding: { bottom: 12 },
+            },
+            grid: { color: 'rgba(255, 255, 255, 0.15)' },
+            ticks: { color: '#cbd5e1', font: { size: 13, weight: '500' } },
+            min: undefined,
+            max: undefined
+          },
+        },
+      },
+    });
+
+    function updateChart(etchRates, label) {
+      etcChart.data.datasets[0].data = etchRates;
+      document.getElementById('chartLabel').textContent = label;
+
+      // Calculate dynamic bounds to prevent extreme zooming
+      const minVal = Math.min(...etchRates);
+      const maxVal = Math.max(...etchRates);
+      const center = (minVal + maxVal) / 2;
+      const rawSpan = maxVal - minVal;
+
+      // Enforce a minimum visual window span of 1000 nm/min
+      const targetSpan = Math.max(rawSpan, 1000);
+
+      // Set min/max with 10% padding beyond the target span
+      const padding = targetSpan * 0.1;
+      etcChart.options.scales.y.min = Math.max(0, Math.round(center - (targetSpan / 2) - padding));
+      etcChart.options.scales.y.max = Math.round(center + (targetSpan / 2) + padding);
+
+      etcChart.update();
+
+      // Calculate and update integral uniformity
+      updateUniformity(etchRates);
+    }
+
+    function clearChart() {
+      etcChart.data.datasets[0].data = [];
+      document.getElementById('chartLabel').textContent = '—';
+      etcChart.options.scales.y.min = undefined;
+      etcChart.options.scales.y.max = undefined;
+      etcChart.update();
+
+      // Reset uniformity indicators
+      resetUniformityUI();
+    }
+
+    // ============================================================
+    // INTEGRAL UNIFORMITY CALCULATION
+    // ============================================================
+    function updateUniformity(etchRates) {
+      if (!etchRates || etchRates.length === 0) {
+        resetUniformityUI();
+        return;
+      }
+
+      const er0 = etchRates[0];
+      if (er0 === 0) {
+        resetUniformityUI();
+        return;
+      }
+
+      const dr = 5; // step size in mm
+      const n = etchRates.length; // should be 10 (points along wafer radius 0 to 45 mm)
+      const R = (n - 1) * dr; // 45 mm
+
+      // f(r) = |(ER(r) - ER(0)) / ER(0)| (absolute value to prevent negative uniformity metrics)
+      const f = etchRates.map(er => Math.abs((er - er0) / er0));
+
+      // 1. Flat Double Integral = 2 * PI * \int_0^R f(r) dr
+      // Using Trapezoidal rule: \int_0^R f(r) dr \approx \Delta r * [f(0)/2 + f(5) + ... + f(40) + f(45)/2]
+      // Since f(0) = 0:
+      let sumFlat = 0;
+      for (let i = 1; i < n - 1; i++) {
+        sumFlat += f[i];
+      }
+      sumFlat += f[n - 1] / 2; // boundary term / 2
+
+      // Flat Uniformity (Dimensionless) = Flat Integral / (2 * PI * R) = (\int_0^R f(r) dr) / R
+      const flatUniformityRatio = (sumFlat * dr) / R;
+
+      // 2. Area-Weighted Polar Uniformity (Dimensionless) = \iint f(r) r d\theta dr / (\pi R^2) = 2/R^2 \int_0^R f(r) r dr
+      // Let g(r) = f(r) * r. Note g(0) = f(0) * 0 = 0.
+      let sumWeighted = 0;
+      for (let i = 1; i < n - 1; i++) {
+        const r = i * dr;
+        sumWeighted += f[i] * r;
+      }
+      sumWeighted += (f[n - 1] * R) / 2; // boundary term / 2
+      const weightedUniformityRatio = (2 / (R * R)) * (sumWeighted * dr);
+
+      // Update UI elements
+      // Show flat uniformity score
+      document.getElementById('scoreFlat').innerText = `${(100 - flatUniformityRatio * 100).toFixed(3)}%`;
+
+      // Show weighted polar uniformity score
+      document.getElementById('scoreWeighted').innerText = `${(100 - weightedUniformityRatio * 100).toFixed(3)}%`;
+    }
+
+    function resetUniformityUI() {
+      document.getElementById('scoreFlat').innerText = '—';
+      document.getElementById('scoreWeighted').innerText = '—';
+    }
+
+    function toggleEquations() {
+      const panel = document.getElementById('equationsPanel');
+      const btn = document.getElementById('btnToggleEq');
+      if (panel.style.display === 'none') {
+        panel.style.display = 'block';
+        btn.innerText = 'Hide Info';
+      } else {
+        panel.style.display = 'none';
+        btn.innerText = 'Show Info';
+      }
+    }
+
+    // ============================================================
+    // DOWNLOAD
+    // ============================================================
+    function downloadCSV() {
+      const header = ['#', 'Power_W', 'Pressure_Torr', 'Feed_sccm', 'Vbias_V',
+        ...Array.from({ length: 10 }, (_, i) => `Pt${i + 1}_ER_nm_min`)].join('\t');
+
+      const lines = allRows.map(r =>
+        [r.id, r.inputs.power.toFixed(4), r.inputs.pressure.toFixed(6),
+        r.inputs.feed.toFixed(4), r.inputs.vbias.toFixed(4),
+        ...r.etchRates.map(v => v.toFixed(4))].join('\t')
+      );
+
+      const blob = new Blob([[header, ...lines].join('\n')], { type: 'text/tab-separated-values' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'etch_rate_predictions.tsv';
+      a.click();
+    }
+
+    // ============================================================
+    // INIT
+    // ============================================================
+    document.getElementById('btnPredict').disabled = true;
+    setViewMode('detailed');
+    initModel();
+  </script>
+</body>
+
+</html>
